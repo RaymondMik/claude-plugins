@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "raymond-plugins",
+  "description": "Personal Claude Code plugins by Ramón Miklus.",
+  "owner": {
+    "name": "Ramón Miklus"
+  },
+  "plugins": [
+    {
+      "name": "dev-journal",
+      "description": "Keeps a dev journal: records each Claude Code session ID with a 2-3 line recap of the changes made.",
+      "source": "./plugins/dev-journal",
+      "category": "productivity"
+    }
+  ]
+}

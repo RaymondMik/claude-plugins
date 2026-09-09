@@ -1,0 +1,16 @@
+{
+  "description": "dev-journal: append a session entry (session ID + short recap) when a Claude Code session ends.",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-end.js\"",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}

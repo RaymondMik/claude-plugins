@@ -1,0 +1,9 @@
+{
+  "name": "dev-journal",
+  "version": "0.1.0",
+  "description": "Records each Claude Code session ID with a 2-3 line recap of the changes made, in a single Markdown dev journal.",
+  "author": {
+    "name": "Ramón Miklus"
+  },
+  "keywords": ["journal", "session", "changelog", "notes", "productivity"]
+}
