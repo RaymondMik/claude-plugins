@@ -1,6 +1,4 @@
-# raymondMik-plugins
-
-Personal Claude Code plugin marketplace.
+#  Personal Claude Code plugin marketplace.
 
 | Plugin                                   | Description                                                                   |
 |------------------------------------------|-------------------------------------------------------------------------------|
