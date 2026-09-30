@@ -1,4 +1,4 @@
-# raymond-plugins
+# raymondMik-plugins
 
 Personal Claude Code plugin marketplace.
 
@@ -9,21 +9,21 @@ Personal Claude Code plugin marketplace.
 ## Use locally
 
 ```text
-/plugin marketplace add /absolute/path/to/claude-plugin
-/plugin install dev-journal@raymond-plugins
+/plugin marketplace add /absolute/path/to/claude-plugins
+/plugin install dev-journal@raymondMik-plugins
 ```
 
 Or load a single plugin for one run without installing:
 
 ```bash
-claude --plugin-dir /absolute/path/to/claude-plugin/plugins/dev-journal
+claude --plugin-dir /absolute/path/to/claude-plugins/plugins/dev-journal
 ```
 
 ## Use from GitHub (after publishing)
 
 ```text
-/plugin marketplace add <github-user>/claude-plugin
-/plugin install dev-journal@raymond-plugins
+/plugin marketplace add RaymondMik/claude-plugins
+/plugin install dev-journal@raymondMik-plugins
 ```
 
 ## Layout

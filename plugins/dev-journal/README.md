@@ -1,8 +1,9 @@
 # dev-journal
 
 A Claude Code plugin that keeps a running **dev journal**. When a Claude Code session ends it
-appends the **session ID** and a **2-3 line recap** of what changed to a single Markdown file,
-so you always have a searchable log of what each session did and which session to `--resume`.
+appends the **session ID**, a **2-3 line recap** of what changed and the **decisions taken** (what
+was decided, why, and what was given up) to a single Markdown file, so you always have a
+searchable log of what each session did, why it went that way, and which session to `--resume`.
 
 ## Requirements
 
@@ -39,29 +40,64 @@ Default journal: `~/.claude/dev-journal.md`. Each entry looks like:
 
 Enforced the job-template quota in the create-template route via LicenseService.
 Added a unit test for the quota check and updated the invite-dialog counter copy.
+
+Decisions:
+- Decided: Enforce the quota in the route handler instead of the LicenseService itself.
+  Why: The service is shared with the CLI importer, which must keep bypassing the quota.
+  Gave up: A single enforcement point; the CLI path is now trusted to call the check itself.
+- Decided: Show the remaining quota in the invite dialog rather than only on the plan page.
+  Why: Users hit the limit mid-flow and had no indication why the button was disabled.
+  Gave up: Nothing significant.
 ```
+
+The **Decisions** block lists, for each decision taken in the session, three lines:
+
+| Line       | Meaning                                                                                        |
+|------------|------------------------------------------------------------------------------------------------|
+| `Decided`  | The choice that was made (design, implementation, scope, tooling or process).                 |
+| `Why`      | The reason given or evident in the session.                                                   |
+| `Gave up`  | The rejected alternative, or the cost or limitation accepted by choosing this. `(not stated)` when unknown. |
+
+At most 5 decisions are recorded per entry, most important first. A session in which nothing
+was decided gets `Decisions: none recorded.` The block is omitted altogether for `fallback`
+entries (the mechanical recap cannot infer decisions) and when `decisions` is `false` in the
+configuration.
 
 `Source` is one of:
 
 | Source     | Meaning                                                                                    |
 |------------|--------------------------------------------------------------------------------------------|
-| `claude`   | Recap written automatically by a short headless Claude call at session end (default mode). |
-| `manual`   | Recap you added with `/dev-journal:add`.                                                   |
-| `fallback` | Mechanical recap (first prompt, files edited, uncommitted diff) when Claude was not used or the call failed. |
+| `claude`   | Recap and decisions written automatically by a short headless Claude call at session end (default mode). |
+| `manual`   | Recap and decisions you added with `/dev-journal:add`.                                     |
+| `fallback` | Mechanical recap (first prompt, files edited, uncommitted diff) when Claude was not used or the call failed. No decisions. |
 
 Sessions with no assistant messages are not journaled. A session that was resumed and ended
 again gets a second, later entry.
+
+When you quit, a one-line notice with a link to the journal is printed under Claude Code's
+`Resume this session with: claude --resume <id>` hint, for example:
+
+```text
+Dev journal: recap for this session is being added to file:///Users/raymond/.claude/dev-journal.md
+```
+
+In `manual` mode the entry is already written at that point and the line reads
+`Dev journal updated: …`. The notice is written directly to the terminal device of the Claude Code
+process (macOS and Linux; it is skipped silently on Windows or when no terminal is found).
 
 ## Commands
 
 | Command                       | What it does                                                                                          |
 |-------------------------------|-------------------------------------------------------------------------------------------------------|
-| `/dev-journal:add [recap]`    | Appends a manual entry for the current session now. With no argument, Claude writes the recap itself. A manual entry suppresses the automatic entry for that session. |
+| `/dev-journal:add [recap]`    | Appends a manual entry for the current session now. With no argument, Claude writes the recap itself; it always adds the decisions taken so far. A manual entry suppresses the automatic entry for that session. |
 | `/dev-journal:show [n]`       | Prints the last `n` entries (default 5).                                                              |
+| `/dev-journal:config [path]`  | Shows where the journal is stored, or saves a new location. `--reset` returns to the default.          |
 
 ## Configuration
 
-Optional file `~/.claude/dev-journal.json`:
+Optional file `~/.claude/dev-journal.json`. To change only the journal location you do not
+need to edit it: run `/dev-journal:config <path>` inside a session (or `/dev-journal:config`
+to see the current location and `/dev-journal:config --reset` to go back to the default).
 
 ```json
 {
@@ -69,7 +105,8 @@ Optional file `~/.claude/dev-journal.json`:
   "model": "haiku",
   "journalPath": "~/.claude/dev-journal.md",
   "timeoutSec": 60,
-  "maxExtractChars": 12000
+  "maxExtractChars": 16000,
+  "decisions": true
 }
 ```
 
@@ -79,10 +116,11 @@ Optional file `~/.claude/dev-journal.json`:
 | `model`           | `haiku`                    | Model for the recap call. Haiku keeps it fast (a few seconds) and cheap (about 1-2 cents). |
 | `journalPath`     | `~/.claude/dev-journal.md` | `~` is expanded on every platform.                                                        |
 | `timeoutSec`      | `60`                       | Max time for the recap call before falling back to the mechanical recap.                  |
-| `maxExtractChars` | `12000`                    | Size cap of the transcript extract sent to Claude.                                        |
+| `maxExtractChars` | `16000`                    | Size cap of the transcript extract sent to Claude.                                        |
+| `decisions`       | `true`                     | Record the decisions taken (what, why, what was given up). `false` keeps the plain recap only. |
 
 Environment variable overrides, handy for testing: `DEV_JOURNAL_MODE`, `DEV_JOURNAL_MODEL`,
-`DEV_JOURNAL_PATH`, `DEV_JOURNAL_TIMEOUT_SEC`.
+`DEV_JOURNAL_PATH`, `DEV_JOURNAL_TIMEOUT_SEC`, `DEV_JOURNAL_DECISIONS` (`0`/`1`).
 
 Troubleshooting: set `DEV_JOURNAL_DEBUG=/path/to/dev-journal-debug.log` before starting Claude
 Code and the hook and its background worker append their log lines (including any error from
@@ -96,7 +134,10 @@ The `SessionEnd` hook (`hooks/hooks.json`) runs `scripts/session-end.js`, which:
    unknown lines are skipped) to collect your prompts, Claude's replies, and files edited.
 2. Adds the git branch and an uncommitted `git diff --stat` for the project.
 3. Pipes that extract to `claude -p` with tools, hooks and plugins disabled
-   (`--tools "" --setting-sources "" --no-session-persistence`), asking for at most 3 lines.
+   (`--tools "" --setting-sources "" --no-session-persistence`), asking for a recap of at most
+   3 lines and the list of decisions. The reply is constrained with `--json-schema` to
+   `{ recap: string[], decisions: { decided, why, gaveUp }[] }`, so it never needs to be parsed
+   out of prose.
 4. Appends the entry. On any failure it appends the mechanical recap instead. The hook never
    blocks or fails the session.
 
@@ -116,7 +157,14 @@ printf '{"session_id":"test-1","transcript_path":"/path/to/some.jsonl","cwd":"%s
   | DEV_JOURNAL_PATH=/tmp/journal.md DEV_JOURNAL_MODE=manual node scripts/session-end.js
 ```
 
-Drop `DEV_JOURNAL_MODE=manual` to exercise the Claude-written recap.
+Drop `DEV_JOURNAL_MODE=manual` to exercise the Claude-written recap and decisions. A manual
+entry with decisions, without a Claude Code session:
+
+```bash
+DEV_JOURNAL_PATH=/tmp/journal.md node scripts/add-entry.js --session test-2 \
+  --decision "Kept the journal as one Markdown file | grep-able and easy to diff | per-project files" \
+  -- "Recorded decisions in the journal."
+```
 
 ## Windows notes
 

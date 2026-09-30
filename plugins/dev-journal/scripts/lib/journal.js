@@ -5,6 +5,9 @@ const path = require('path');
 
 const HEADER = '# Dev Journal\n\nSession log written by the dev-journal Claude Code plugin.\n';
 const MAX_RECAP_LINES = 3;
+const MAX_DECISIONS = 5;
+const MAX_DECISION_FIELD_CHARS = 240;
+const NOT_STATED = '(not stated)';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -25,11 +28,61 @@ function normaliseRecap(text) {
     .slice(0, MAX_RECAP_LINES);
 }
 
-function formatEntry({ sessionId, cwd, branch, source, recap, date }) {
+/** One plain line: no markdown labels the writer may have repeated, no line breaks, capped length. */
+function cleanField(value, label) {
+  let s = String(value == null ? '' : value)
+    .replace(/\s+/g, ' ')
+    .replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '')
+    .trim();
+  // Strips "Decided: ", "**Decided:** " and "**Decided**: " prefixes the writer may have repeated.
+  if (label) s = s.replace(new RegExp(`^\\*{0,2}${label}\\*{0,2}\\s*:\\s*\\*{0,2}\\s*`, 'i'), '').trim();
+  if (s.length > MAX_DECISION_FIELD_CHARS) s = `${s.slice(0, MAX_DECISION_FIELD_CHARS - 1).trimEnd()}…`;
+  return s;
+}
+
+/**
+ * Normalise a list of decisions to at most `max` items of the shape
+ * { decided, why, gaveUp }, each a single non-empty line. Items without a "decided" are dropped;
+ * a missing "why" or "gaveUp" becomes "(not stated)". Accepts snake_case keys too.
+ */
+function normaliseDecisions(list, max = MAX_DECISIONS) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const decided = cleanField(item.decided ?? item.decision ?? item.what, 'Decided');
+    if (!decided) continue;
+    out.push({
+      decided,
+      why: cleanField(item.why ?? item.reason ?? item.because, 'Why') || NOT_STATED,
+      gaveUp: cleanField(item.gaveUp ?? item.gave_up ?? item.tradeoff ?? item.tradeOff, 'Gave up') || NOT_STATED,
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * Markdown for the decisions block. `decisions === null` means "not collected" (fallback recap,
+ * feature off): no block at all. An empty list means the writer looked and found none.
+ */
+function formatDecisions(decisions) {
+  if (decisions === null || decisions === undefined) return [];
+  const items = normaliseDecisions(decisions);
+  if (!items.length) return ['Decisions: none recorded.'];
+  const lines = ['Decisions:'];
+  for (const d of items) {
+    lines.push(`- Decided: ${d.decided}`, `  Why: ${d.why}`, `  Gave up: ${d.gaveUp}`);
+  }
+  return lines;
+}
+
+function formatEntry({ sessionId, cwd, branch, source, recap, decisions = null, date }) {
   const project = cwd ? path.basename(cwd) : 'unknown-project';
   const title = branch ? `${project} (${branch})` : project;
   const lines = normaliseRecap(recap);
   const body = lines.length ? lines.join('\n') : '(no recap)';
+  const decisionLines = formatDecisions(decisions);
   return [
     `## ${formatTimestamp(date)} · ${title}`,
     `- Session: \`${sessionId}\``,
@@ -37,6 +90,7 @@ function formatEntry({ sessionId, cwd, branch, source, recap, date }) {
     `- Source: ${source}`,
     '',
     body,
+    ...(decisionLines.length ? ['', ...decisionLines] : []),
     '',
     '',
   ].join('\n');
@@ -64,4 +118,14 @@ function hasManualEntry(journalPath, sessionId) {
   return sections.some((s) => s.includes(`- Session: \`${sessionId}\``) && /^- Source: manual\s*$/m.test(s));
 }
 
-module.exports = { appendEntry, formatEntry, hasManualEntry, normaliseRecap, formatTimestamp, MAX_RECAP_LINES };
+module.exports = {
+  appendEntry,
+  formatEntry,
+  formatDecisions,
+  hasManualEntry,
+  normaliseRecap,
+  normaliseDecisions,
+  formatTimestamp,
+  MAX_RECAP_LINES,
+  MAX_DECISIONS,
+};

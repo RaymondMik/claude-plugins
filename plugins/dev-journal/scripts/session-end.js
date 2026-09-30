@@ -4,12 +4,16 @@
 /**
  * dev-journal SessionEnd hook.
  *
- * Reads the hook payload from stdin and appends a journal entry: session ID + a 2-3 line recap.
+ * Reads the hook payload from stdin and appends a journal entry: session ID + a 2-3 line recap +
+ * the decisions taken (what was decided, why, and what was given up).
  *
  * Claude Code gives SessionEnd hooks only a short grace period before the process exits, while a
  * Claude-written recap takes several seconds. So in "auto" mode this script re-launches itself as a
  * detached background worker (`--worker`, payload passed via env) and returns at once; the worker
  * appends the entry a few seconds later. "manual" mode is instant and runs inline.
+ *
+ * After queuing (auto) or writing (manual) the entry it prints one line straight to the terminal of
+ * the Claude Code process, under the "Resume this session with" hint, saying where the journal is.
  *
  * Never blocks or fails the session: every error is logged to stderr and the exit code is 0.
  */
@@ -21,6 +25,7 @@ const { parseTranscript, buildExtract } = require('./lib/transcript');
 const { gitInfo } = require('./lib/git');
 const { summarizeWithClaude, mechanicalRecap } = require('./lib/summarize');
 const { appendEntry, hasManualEntry } = require('./lib/journal');
+const { writeToTerminal, fileLink } = require('./lib/terminal');
 
 const PAYLOAD_ENV = 'DEV_JOURNAL_PAYLOAD';
 
@@ -78,15 +83,25 @@ function writeEntry({ sessionId, transcriptPath, cwd }, config) {
   const branch = parsed.branch || git.branch;
 
   let recap = null;
+  let decisions = null; // null = not collected (mechanical recap or feature off)
   let source = 'fallback';
   if (config.mode === 'auto') {
-    recap = summarizeWithClaude(buildExtract(parsed, git, config.maxExtractChars), config);
-    if (recap) source = 'claude';
+    const summary = summarizeWithClaude(buildExtract(parsed, git, config.maxExtractChars), config);
+    if (summary) {
+      recap = summary.recap;
+      decisions = config.decisions ? summary.decisions : null;
+      source = 'claude';
+    }
   }
   if (!recap) recap = mechanicalRecap(parsed, git);
 
-  const written = appendEntry(config.journalPath, { sessionId, cwd, branch, source, recap });
+  const written = appendEntry(config.journalPath, { sessionId, cwd, branch, source, recap, decisions });
   return `entry (${source}) written to ${written}`;
+}
+
+/** One line under Claude Code's resume hint. Best effort: silently skipped when no terminal is reachable. */
+function notify(line) {
+  if (!writeToTerminal(line)) log(`terminal not reachable; skipped notice: ${line}`);
 }
 
 function launchWorker(payload) {
@@ -128,8 +143,14 @@ async function main() {
   }
 
   const config = loadConfig();
-  if (isWorker || config.mode !== 'auto') {
+  if (isWorker) {
     log(writeEntry(payload, config));
+    return;
+  }
+  if (config.mode !== 'auto') {
+    const status = writeEntry(payload, config);
+    log(status);
+    if (status.startsWith('entry (')) notify(`Dev journal updated: ${fileLink(config.journalPath)}`);
     return;
   }
 
@@ -144,6 +165,7 @@ async function main() {
   }
   const pid = launchWorker(payload);
   log(`background worker ${pid} will append the recap for session ${payload.sessionId} shortly`);
+  notify(`Dev journal: recap for this session is being added to ${fileLink(config.journalPath)}`);
 }
 
 main().catch((err) => {

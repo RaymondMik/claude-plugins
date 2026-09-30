@@ -9,7 +9,8 @@ const DEFAULTS = Object.freeze({
   model: 'haiku',
   journalPath: path.join('~', '.claude', 'dev-journal.md'),
   timeoutSec: 60,
-  maxExtractChars: 12000,
+  maxExtractChars: 16000,
+  decisions: true, // also record, per decision, what was decided, why, and what was given up
 });
 
 const CONFIG_PATH = path.join(os.homedir(), '.claude', 'dev-journal.json');
@@ -32,6 +33,15 @@ function readConfigFile() {
   }
 }
 
+function toBool(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const s = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(s)) return true;
+  if (['0', 'false', 'no', 'off'].includes(s)) return false;
+  return fallback;
+}
+
 function toPositiveInt(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
@@ -49,6 +59,7 @@ function loadConfig(env = process.env) {
     journalPath: path.resolve(expandHome(env.DEV_JOURNAL_PATH || file.journalPath || DEFAULTS.journalPath)),
     timeoutSec: toPositiveInt(env.DEV_JOURNAL_TIMEOUT_SEC || file.timeoutSec, DEFAULTS.timeoutSec),
     maxExtractChars: toPositiveInt(file.maxExtractChars, DEFAULTS.maxExtractChars),
+    decisions: toBool(env.DEV_JOURNAL_DECISIONS, toBool(file.decisions, DEFAULTS.decisions)),
     configPath: CONFIG_PATH,
   };
 }
